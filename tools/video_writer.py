@@ -34,7 +34,6 @@ if __name__ == '__main__':
         out.write(im)
         ret, im = cap.read()
         f += 1
-    total_time = int((time.time() - start_time) // 1000)
     cap.release()
     out.release()
-    print('Anonymal Time: {:02.1f}s'.format(total_time))
+    print('Anonymal Time: {:02.1f}s'.format(time.time() - start_time))
