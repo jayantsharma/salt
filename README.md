@@ -68,13 +68,14 @@ cd $Anonymal/experiments/siammask_sharp
 wget http://www.robots.ox.ac.uk/~qwang/SiamMask_VOT.pth
 wget http://www.robots.ox.ac.uk/~qwang/SiamMask_DAVIS.pth
 ```
-- Run `video_cleaner.py` to clean the video. Hit `c` to play the video in real-time, `a` and `d` to go back or ahead 48 frames. To enter the anonymization mode, hit `space` at any point. Draw a bounding box and hit `return` (`enter`) to register the bounding box. When you are done selecting bounding boxes, hit `escape` and then `a`, `s`, or `d` depending on whether you want to start anonymizing from a few frames before the current frame, the current frame, or a few frames after the current frame. When anonymization is running, you can hit `c` to clear the current selection and play the video normally or `space` to choose a new one. `video_cleaner.py` will save lossless images to the target directory in real-time - this allows you to easily go back and forth through the video without losing your changes (unless you choose to do so), and preserves all resolution.  
+- Run `video_cleaner.py` to clean the video. Hit `c` to play the video in real-time, `a` and `d` to go back or ahead 48 frames. To enter the anonymization mode, hit `space` at any point. Draw a bounding box and hit `return` (`enter`) to register the bounding box. When you are done selecting bounding boxes, hit `escape` and then `a`, `escape`, or `d` depending on whether you want to start anonymizing from a few frames before the current frame, the current frame, or a few frames after the current frame. When anonymization is running, you can hit `c` to clear the current selection and play the video normally or `space` to choose a new one. `video_cleaner.py` will save lossless images to the target directory in real-time - this allows you to easily go back and forth through the video without losing your changes (unless you choose to do so), and preserves all resolution. 
 
 ```shell
 cd $Anonymal/experiments/siammask_sharp
 export PYTHONPATH=$PWD:$PYTHONPATH
 python ../../tools/video_cleaner.py --resume SiamMask_DAVIS.pth --config config_davis.json --base_path 'demo.mp4' --target_path 'demo/'
 ```
+- (Tip: You can press `escape` repeatedly when in selection mode, without selecting targets, to step through frame by frame. In addition, to cancel selection in selection more, you can use `escape + s`)
 
 - Run `video_writer.py` to combine the images and the original video into a new video.   
 
