@@ -16,7 +16,7 @@ This repo and method are developed by Eric Zelikman and Xindi Wu closely based o
 ### Bibtex
 If you find this code useful, please consider citing 
 ```
-@inproceedings{anonymal2020,
+@misc{anonymal2020,
     title={Anonymal},
     author={Zelikman, Eric and Wu, Xindi},
     booktitle={GitHub},
