@@ -2,7 +2,7 @@
 
 Anonymal provides the ability to efficiently manually anonymize videos quickly and easily. Simply scrub through a video in near-real-time and draw bounding boxes around objects you'd like to anonymize, controlled primarily with the keyboard. Existing software tools attempt to take this process entirely out of the hands of the user and often miss important detail and are tuned to specific anonymization targets, while a manual approach using video-editing software is highly time-consuming.
 
-This repo and method are developed by Eric Zelikman and Xindi Wu closely based on that of the CVPR 2019 paper **Fast Online Object Tracking and Segmentation: A Unifying Approach** by 
+This repo and method are developed by [Eric Zelikman](https://zelikman.me/) and [Xindi Wu](https://xindiwu.github.io/) closely based on that of the CVPR 2019 paper **Fast Online Object Tracking and Segmentation: A Unifying Approach** by 
 [Qiang Wang](http://www.robots.ox.ac.uk/~qwang/)\*, [Li Zhang](http://www.robots.ox.ac.uk/~lz)\*, [Luca Bertinetto](http://www.robots.ox.ac.uk/~luca)\*, [Weiming Hu](https://scholar.google.com/citations?user=Wl4tl4QAAAAJ&hl=en), [Philip H.S. Torr](https://scholar.google.it/citations?user=kPxa2w0AAAAJ&hl=en&oi=ao)
 **CVPR 2019** <br />
 **[[Paper](https://arxiv.org/abs/1812.05050)] [[Video](https://youtu.be/I_iOVrcpEBw)] [[Project Page](http://www.robots.ox.ac.uk/~qwang/SiamMask)]** <br />
