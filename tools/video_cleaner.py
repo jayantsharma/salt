@@ -17,12 +17,39 @@ parser.add_argument('--resume', default='', type=str, required=True,
                     metavar='PATH',help='path to latest checkpoint (default: none)')
 parser.add_argument('--config', dest='config', default='config_davis.json',
                     help='hyper-parameter of SiamMask in json format')
-parser.add_argument('--base_path', default='../../data/tennis', help='datasets')
-parser.add_argument('--target_path', default='../../results/', help='datasets')
+parser.add_argument('--base_path', default='../../data/tennis', help='base video path')
+parser.add_argument('--target_path', default='../../results/', help='target path to store blurred images')
 parser.add_argument('--writers', default=16, help='number of image writers')
-parser.add_argument('--metadata_path', help='append to existing metadata')
+parser.add_argument('--metadata_path', help='where to store (or append) the metadata')
 parser.add_argument('--cpu', action='store_true', help='cpu mode')
 args = parser.parse_args()
+
+def get_max_identity(metadata_path):
+    cur_identity = 0
+    # Get the max existing identity if adding to an existing file
+    if metadata_path is not None and os.path.isfile(metadata_path):
+        with open(metadata_path, "r") as cur_file:
+            for frame in json.load(cur_file)["frames"]:
+                for idx, item in frame.items():
+                    if isinstance(item, list):
+                        identities = [example["identity"] + 1 for example in item if "identity" in example]
+                        cur_identity = max(cur_identity, *identities)
+    return cur_identity
+
+def write_metadata(metadata_path, base_path, metadata):
+    # write metadata to file:
+    old_metadata = {"filepath":base_path, "frames":[], "service":"blur", "out_type":"videos"}
+    if os.path.isfile(metadata_path):
+        with open(metadata_path, "r") as cur_file:
+            old_metadata = json.load(cur_file)
+            for frame in old_metadata["frames"]:
+                if frame["index"] in metadata:
+                    frame['tracked_objects'] = metadata.pop(frame["index"])['tracked_objects']
+    old_metadata["frames"].extend(metadata.values())
+    with open(metadata_path, "w") as cur_file:
+        json.dump(old_metadata, cur_file)
+
+
 
 if __name__ == '__main__':
     if not os.path.exists(args.target_path):
@@ -50,31 +77,16 @@ if __name__ == '__main__':
     cap = cv2.VideoCapture(args.base_path)
     frameWidth = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     frameHeight = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    ret = True
     cv2.namedWindow(window_name, cv2.WND_PROP_FULLSCREEN)
-    toc = 0
-
+    toc, f = 0, 0
     ret, im = cap.read()
-    f = 0
-    framerate = 60
+
     key = cv2.waitKey(0)
     mask_enabled = key != 99
     get_new_example = mask_enabled
     states = []
     metadata = {}
-    cur_identity = 0
-    # Get the current identity if adding to an existing file
-    if args.metadata_path is not None:
-        if os.path.isfile(args.metadata_path):
-            with open(args.metadata_path, "r") as cur_file:
-                old_metadata = json.load(cur_file)
-                for frame in old_metadata["frames"]:
-                    for idx, item in frame.items():
-                        if isinstance(item, list):
-                            for example in item:
-                                if "identity" in example:
-                                    cur_identity = max(example["identity"], cur_identity)
-            cur_identity += 1
+    cur_identity = get_max_identity(args.metadata_path)
 
     while ret:
         tic = cv2.getTickCount()
@@ -107,30 +119,24 @@ if __name__ == '__main__':
         elif f > 0:  # tracking
             # If you're actually tracking the objects
             if mask_enabled:
-                metadata[f] = {
-                    'index': f,
-                    'tracked_objects': []
-                }
+                # Initiate the frame metadata
+                metadata[f] = {'index': f, 'tracked_objects': []}
                 for state_idx, state in enumerate(states):
                     states[state_idx] = siamese_track(state, im, mask_enable=True, refine_enable=True, device=device)  # track
+                    # Add the object metadata to the list of tracked objects for this frame
                     metadata[f]['tracked_objects'].append({
                         "boundingBox": state['ploygon'].tolist(),
-                        "identity": cur_identity + state_idx,
+                        "identity": cur_identity + state_idx, # Keep a different identity for each mask
                         "score": state["score"].item()
                     })
                     location = state['ploygon'].flatten()
                     mask = state['mask'] > state['p'].seg_thr * 0.9
-                    
                     blur = cv2.blur(im, (30, 30), cv2.BORDER_DEFAULT)
-                    # im[:, :, 2] = (mask > 0) * 255 + (mask == 0) * im[:, :, 2]
                     im = (mask > 0)[:, :, None] * blur + (mask == 0)[:, :, None] * im
-                    # cv2.polylines(im, [np.int0(location).reshape((-1, 1, 2))], True, (0, 255, 0), 3)
-                    
                     write_executor.submit(cv2.imwrite, args.target_path + str(f) + ".png", im, [cv2.IMWRITE_PNG_COMPRESSION, 0])
             cv2.imshow(window_name, im)
             key = cv2.waitKey(1)
             if key > 0:
-                print(key)
                 if key == 97:
                     f -= 48
                     cap.set(1, f)
@@ -144,27 +150,9 @@ if __name__ == '__main__':
         toc += cv2.getTickCount() - tic
         ret, im = cap.read()
         f += 1
-    # write metadata to file:
     if args.metadata_path is not None:
-        if os.path.isfile(args.metadata_path):
-            with open(args.metadata_path, "r") as cur_file:
-                old_metadata = json.load(cur_file)
-                for frame in old_metadata["frames"]:
-                    if frame["index"] in metadata:
-                        frame['tracked_objects'] = metadata[frame["index"]]['tracked_objects']
-        else:
-            old_metadata = {
-                "filepath": args.base_path, 
-                "frames": [],
-                "service": "blur",
-                "out_type": "videos"
-            }
-        with open(args.metadata_path, "w") as cur_file:
-            for key, item in metadata.items():
-                old_metadata["frames"].append(item)
-            json.dump(old_metadata, cur_file)
-
+        write_metadata(args.metadata_path, args.base_path, metadata)
     toc /= cv2.getTickFrequency()
     fps = f / toc
     cap.release()
-    print(window_name + ' Time: {:02.1f}s Speed: {:3.1f}fps (with visulization!)'.format(toc, fps))
+    print(f'{window_name} Time: {toc:02.1f}s Speed: {fps:3.1f}fps (with visulization!)')
