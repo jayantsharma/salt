@@ -8,6 +8,7 @@
 import glob
 from test import *
 import os
+import json
 from concurrent.futures import ProcessPoolExecutor as Executor
 
 parser = argparse.ArgumentParser(description='PyTorch Tracking Demo')
@@ -19,6 +20,7 @@ parser.add_argument('--config', dest='config', default='config_davis.json',
 parser.add_argument('--base_path', default='../../data/tennis', help='datasets')
 parser.add_argument('--target_path', default='../../results/', help='datasets')
 parser.add_argument('--writers', default=16, help='number of image writers')
+parser.add_argument('--metadata_path', help='append to existing metadata')
 parser.add_argument('--cpu', action='store_true', help='cpu mode')
 args = parser.parse_args()
 
@@ -59,10 +61,26 @@ if __name__ == '__main__':
     mask_enabled = key != 99
     get_new_example = mask_enabled
     states = []
+    metadata = {}
+    cur_identity = 0
+    # Get the current identity if adding to an existing file
+    if args.metadata_path is not None:
+        if os.path.isfile(args.metadata_path):
+            with open(args.metadata_path, "r") as cur_file:
+                old_metadata = json.load(cur_file)
+                for frame in old_metadata["frames"]:
+                    for idx, item in frame.items():
+                        if isinstance(item, list):
+                            for example in item:
+                                if "identity" in example:
+                                    cur_identity = max(example["identity"], cur_identity)
+            cur_identity += 1
+
     while ret:
         tic = cv2.getTickCount()
         # If in selection mode
         if get_new_example and mask_enabled:  # init
+            cur_identity += len(states) # Count the previous boxes
             states = []
             init_rects = cv2.selectROIs(window_name, im, False, False)
             # Create a new siammask tracker for each box
@@ -89,8 +107,17 @@ if __name__ == '__main__':
         elif f > 0:  # tracking
             # If you're actually tracking the objects
             if mask_enabled:
+                metadata[f] = {
+                    'index': f,
+                    'tracked_objects': []
+                }
                 for state_idx, state in enumerate(states):
                     states[state_idx] = siamese_track(state, im, mask_enable=True, refine_enable=True, device=device)  # track
+                    metadata[f]['tracked_objects'].append({
+                        "boundingBox": state['ploygon'].tolist(),
+                        "identity": cur_identity + state_idx,
+                        "score": state["score"].item()
+                    })
                     location = state['ploygon'].flatten()
                     mask = state['mask'] > state['p'].seg_thr * 0.9
                     
@@ -117,6 +144,26 @@ if __name__ == '__main__':
         toc += cv2.getTickCount() - tic
         ret, im = cap.read()
         f += 1
+    # write metadata to file:
+    if args.metadata_path is not None:
+        if os.path.isfile(args.metadata_path):
+            with open(args.metadata_path, "r") as cur_file:
+                old_metadata = json.load(cur_file)
+                for frame in old_metadata["frames"]:
+                    if frame["index"] in metadata:
+                        frame['tracked_objects'] = metadata[frame["index"]]['tracked_objects']
+        else:
+            old_metadata = {
+                "filepath": args.base_path, 
+                "frames": [],
+                "service": "blur",
+                "out_type": "videos"
+            }
+        with open(args.metadata_path, "w") as cur_file:
+            for key, item in metadata.items():
+                old_metadata["frames"].append(item)
+            json.dump(old_metadata, cur_file)
+
     toc /= cv2.getTickFrequency()
     fps = f / toc
     cap.release()
