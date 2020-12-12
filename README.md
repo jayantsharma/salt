@@ -7,7 +7,10 @@ This repo and method are developed by [Eric Zelikman](https://zelikman.me/) and 
 **CVPR 2019** <br />
 **[[Paper](https://arxiv.org/abs/1812.05050)] [[Video](https://youtu.be/I_iOVrcpEBw)] [[Project Page](http://www.robots.ox.ac.uk/~qwang/SiamMask)]** <br />
 
-
+Functionally, Anonymal aims to make video anonymization accessible and straightforward. To do this, it: 
+1. Provides a user interface for the video and blurring procedure, allowing the selection of zero to many objects at different times in the video, as necessary.
+2. Blurs the tracked regions, efficiently and losslessly storing the mask data (>99.9% improvement over image-based storage)
+3. Automatically generates a new blurred video alonside polygonal metadata about the blurred areas.
 
 <div align="center">
   <img src="demo_cats.jpg" width="600px" />
@@ -77,7 +80,7 @@ python ../../tools/video_cleaner.py --resume SiamMask_DAVIS.pth --config config_
 ```
 - (Tip: You can press `escape` repeatedly when in selection mode, without selecting targets, to step through frame by frame. In addition, to cancel selection in selection more, you can use `escape + s`)
 
-- Run `video_writer.py` to combine the images and the original video into a new video.   
+- Run `video_writer.py` to combine the images and the original video into a new video, if you chose not to do so when prompted at the end of the `video_cleaner` run.
 
 ```shell
 cd $Anonymal/experiments/siammask_sharp
