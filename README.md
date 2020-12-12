@@ -9,7 +9,7 @@ This repo and method are developed by [Eric Zelikman](https://zelikman.me/) and 
 
 Functionally, Anonymal aims to make video anonymization accessible and straightforward. To do this, it: 
 1. Provides a user interface for the video and blurring procedure, allowing the selection of zero to many objects at different times, as necessary.
-2. Blurs and records the tracked regions, efficiently and losslessly storing the data.
+2. Blurs the tracked regions, efficiently and losslessly storing the data.
 3. Automatically generates a new blurred video alonside polygonal metadata about the blurred areas.
 4. Contains scripts for simple batch video processing to reduce friction.
 
