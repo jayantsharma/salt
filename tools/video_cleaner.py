@@ -7,6 +7,7 @@
 # --------------------------------------------------------
 import glob
 import os
+from copy import copy
 import json
 import subprocess
 import time
@@ -26,6 +27,20 @@ parser.add_argument('--writers', default=16, help='number of image writers')
 parser.add_argument('--metadata_path', help='where to store (or append) the metadata')
 parser.add_argument('--cpu', action='store_true', help='cpu mode')
 args = parser.parse_args()
+
+cfg = load_config(args)
+from custom import Custom
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+torch.backends.cudnn.benchmark = True
+
+def get_siammask():
+    siammask = Custom(anchors=cfg['anchors'])
+    if args.resume:
+        assert isfile(args.resume), 'Please download {} first.'.format(args.resume)
+        siammask = load_pretrain(siammask, args.resume)
+    siammask.eval().to(device)
+    return siammask
 
 def get_max_identity(metadata_path):
     cur_identity = 0
@@ -70,13 +85,26 @@ class VideoPlayer():
     def get_cur_frame(self):
         return self.frame
 
+    def refresh_cur_frame(self):
+        f = self.cap.get(1)
+        if f > 0:
+            f -= 1
+            self.cap.set(1, f)
+            self.frame = self.cap.read()
+            return self.frame
+
     def set_frame(self, new_f):
         if self.manual_update:
-            self.f = min(max(new_f, 0), self.length)
-            self.cap.set(1, self.f)
+            f = min(max(new_f, 0), self.length)
+            self.cap.set(1, f)
+            self.f = f - 1
     
     def shift_frame(self, delta):
         self.set_frame(self.f + delta)
+
+    def shift_and_read_frame(self, delta):
+        self.shift_frame(delta)
+        return self.next_frame()
     
     def next_frame(self):
         self.f += 1
@@ -106,103 +134,177 @@ def confirm(prompt, default=None):
                 print("Please choose a valid option")
                 continue
 
+class Track():
+    def __init__(self, offset, init_rect):
+        self.offset = offset
+
+        self.siammask = get_siammask()
+        x, y, w, h = init_rect
+        target_pos = np.array([x + w / 2, y + h / 2])
+        target_sz = np.array([w, h])
+        state = siamese_init(im, target_pos, target_sz, self.siammask, cfg['hp'], device=device)  # init tracker
+        self.state = state
+
+        tracked_init = siamese_track(self.state, im, mask_enable=True, refine_enable=True, device=device)  # track
+        rect = tracked_init['ploygon'] # top-left & bottom-right, xy format
+        # rect = np.array([(x,y), (x+w,y), (x+w,y+h), (x,y+h)])
+        self.frames_tracked = [rect]
+
+    def track_frame(self, im, f):
+        if self.is_next_frame(f):
+            tracked_state = siamese_track(self.state, im, mask_enable=True, refine_enable=True, device=device)  # track
+            rect = tracked_state['ploygon'] # top-left & bottom-right, xy format
+            self.frames_tracked.append(rect)
+            self.state = tracked_state
+            return rect
+    
+    def is_next_frame(self, f):
+        return self.map_to_idx(f) == len(self.frames_tracked)
+
+    def map_to_idx(self, f):
+        return f - self.offset
+
+    def map_to_f(self, idx):
+        return self.offset + idx
+
+    def get_rect(self, f):
+        return self.frames_tracked[self.map_to_idx(f)]
+
+    def terminate(self, f, per_frame_tracks):
+        last_f = self.map_to_f(len(self.frames_tracked) - 1)
+        for frm in range(f, last_f + 1):
+            per_frame_tracks[frm].remove(self)
+        self.frames_tracked = self.frames_tracked[:self.map_to_idx(f)]
+        # Free up memory
+        del self.siammask
+        del self.state
+
 if __name__ == '__main__':
     if not os.path.exists(args.target_path):
         os.mkdir(args.target_path)
-    # Setup device
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    torch.backends.cudnn.benchmark = True
 
-    write_executor = Executor(max_workers=args.writers)
+    # write_executor = Executor(max_workers=args.writers)
     window_name = "Anonymal"
-    # Setup Model
-    cfg = load_config(args)
-    from custom import Custom
-    def get_siammask():
-        siammask = Custom(anchors=cfg['anchors'])
-        if args.resume:
-            assert isfile(args.resume), 'Please download {} first.'.format(args.resume)
-            siammask = load_pretrain(siammask, args.resume)
-        siammask.eval().to(device)
-        return siammask
 
-    base_siammask = get_siammask()
+    # base_siammask = get_siammask()
 
     target_value = 0
-    toc = 0
     vid = VideoPlayer()
     ret, im = vid.get_cur_frame()
 
-    key = cv2.waitKey(0)
-    vid.mask_enabled = key != 99
-    vid.get_new_example = vid.mask_enabled
+    # key = cv2.waitKey(0)
+    # vid.mask_enabled = key != 99
+    # vid.get_new_example = vid.mask_enabled
+    mode = "play"
     states = []
     metadata = {}
     cur_identity = get_max_identity(args.metadata_path)
+    cur_tracks = set()
+    per_frame_tracks = [ set() for _ in range(vid.length) ]
 
+    def display(im, mode):
+        if mode == "play":
+            text = "{}, Frame {}, c: -30, v: +30, Space: Pause".format(mode.upper(), vid.f)
+        elif mode == "review":
+            text = "{}, Frame {}, d: -1, f: +1, c: -5, v: +5, m: Modify, n: New, Space: Play".format(mode.upper(), vid.f)
+        elif mode == "roi":
+            text = "Draw bbox, Frame {}".format(vid.f)
+        elif mode == "modify":
+            text = "Modify, Frame {}, t: Terminate, d: Delete".format(vid.f)
+        cv2.putText(im, text, (100,50), cv2.FONT_HERSHEY_DUPLEX, 1, (255,0,0))
+        for track in per_frame_tracks[vid.f]:
+            rect = track.get_rect(vid.f)
+            clr = (255,0,0) if track in cur_tracks else (0,0,255) 
+            # cv2.rectangle(im, tuple(rect[0]), tuple(rect[1]), clr, 2)
+            cv2.polylines(im, [np.int0(rect).reshape((-1, 1, 2))], True, clr, 3)
+        cv2.imshow(window_name, im)
+
+    tic = time.time()
     while ret:
-        tic = cv2.getTickCount()
-        # If in selection mode
-        if vid.get_new_example and vid.mask_enabled:  # init
-            cur_identity += len(states) # Count the previous boxes
-            states = []
-            init_rects = cv2.selectROIs(window_name, im, False, False)
-            # Create a new siammask tracker for each box
-            for rect_idx, init_rect in enumerate(init_rects):
-                if sum(init_rect) != 0:
-                    # We initiate new models judiciously, as most anonymization instances will only require one box
-                    siammask = base_siammask if rect_idx == 0 else get_siammask()
-                    x, y, w, h = init_rect
-                    target_pos = np.array([x + w / 2, y + h / 2])
-                    target_sz = np.array([w, h])
-                    states.append(siamese_init(im, target_pos, target_sz, siammask, cfg['hp'], device=device))  # init tracker
-                vid.get_new_example = False
-            
-            key = cv2.waitKey(0)
-            print(key)
-            if key == 97: vid.shift_frame(-12)
-            elif key == 100: vid.shift_frame(12)
-            elif key == 115: vid.mask_enabled = False
-        else: # tracking
-            # If you're actually tracking the objects
-            if vid.mask_enabled:
-                # Initiate the frame metadata
-                metadata[vid.f] = {'index': vid.f, 'tracked_objects': []}
-                all_mask = np.ones_like(im)[:, :, 0]
-                for state_idx, state in enumerate(states):
-                    states[state_idx] = siamese_track(state, im, mask_enable=True, refine_enable=True, device=device)  # track
-                    # Add the object metadata to the list of tracked objects for this frame
-                    metadata[vid.f]['tracked_objects'].append({
-                        "boundingBox": state['ploygon'].tolist(),
-                        "identity": cur_identity + state_idx, # Keep a different identity for each mask
-                        "score": state["score"].item()
-                    })
-                    location = state['ploygon'].flatten()
-                    mask = state['mask'] < state['p'].seg_thr
-                    all_mask *= mask
-                blur = cv2.blur(im, (30, 30), cv2.BORDER_DEFAULT)
-                im = (all_mask == 0)[:, :, None] * blur + (all_mask != 0)[:, :, None] * im
-                write_executor.submit(np.savez_compressed, args.target_path + str(vid.f) + ".npz", all_mask > 0)
-            cv2.imshow(window_name, im)
+        if mode == "play":
+            for track in cur_tracks:
+                rect = track.track_frame(im, vid.f)
+                if rect is not None:
+                    per_frame_tracks[vid.f].add(track)
+            display(im, mode)
             key = cv2.waitKey(1)
             if key > 0:
-                if key == 97: vid.shift_frame(-48)
-                elif key == 100: vid.shift_frame(48)
-                else:
-                    vid.mask_enabled = key != 99
-                    vid.get_new_example = vid.mask_enabled
-                
-        toc += cv2.getTickCount() - tic
-        ret, im = vid.next_frame()
-    if args.metadata_path is not None:
-        write_metadata(args.metadata_path, args.base_path, metadata)
-    toc /= cv2.getTickFrequency()
-    fps = vid.length / toc
+                if key == 99: 
+                    ret, im = vid.shift_and_read_frame(-30)
+                elif key == 118: 
+                    vid.shift_and_read_frame(+30)
+                elif key == 32:
+                    mode = "review"
+                    ret, im = vid.refresh_cur_frame()
+            else:
+                ret, im = vid.next_frame()
+
+        elif mode == "review":
+            display(im, mode)
+            key = cv2.waitKey(0)
+            if key > 0:
+                if key in [100, 102, 99, 118]:
+                    if key == 100:
+                        d = -1
+                    elif key == 102:
+                        d = +1
+                    elif key == 99:
+                        d = -5
+                    else:
+                        d = +5
+                    ret, im = vid.shift_and_read_frame(d)
+                elif key == 109:
+                    ret, im = vid.refresh_cur_frame()
+                    tracks = copy(per_frame_tracks[vid.f])
+                    for i, track in enumerate(tracks):
+                        if track in cur_tracks:
+                            text = "Track {}, Frame {}, t: Terminate, d: Delete, c: Continue".format(i + 1, vid.f)
+                            clr = (255,0,0)
+                        else:
+                            text = "Track {}, Frame {}, d: Delete, c: Continue".format(i + 1, vid.f)
+                            clr = (0,0,255)
+                        cv2.putText(im, text, (100,50), cv2.FONT_HERSHEY_DUPLEX, 1, (255,0,0))
+                        rect = track.get_rect(vid.f)
+                        cv2.polylines(im, [np.int0(rect).reshape((-1, 1, 2))], True, clr, 3)
+                        cv2.imshow(window_name, im)
+                        key = cv2.waitKey(0)
+                        if track in cur_tracks:
+                            if key in [116, 100]:
+                                end_f = vid.f if key == 116 else track.offset
+                                track.terminate(end_f, per_frame_tracks)
+                                cur_tracks.remove(track)
+                        else:
+                            if key == 100:
+                                track.terminate(track.offset, per_frame_tracks)
+                        ret, im = vid.refresh_cur_frame()
+                elif key == 110:
+                    # select roi
+                    ret, im = vid.refresh_cur_frame()
+                    display(im, "roi")
+                    init_rect = cv2.selectROI(window_name, im, False, False)
+                    if init_rect:
+                        track = Track(vid.f, init_rect)
+                        cur_tracks.add(track)
+                        per_frame_tracks[vid.f].add(track)
+
+                    mode = "play"
+                    ret, im = vid.next_frame()
+                elif key == 32:
+                    mode = "play"
+                    ret, im = vid.refresh_cur_frame()
+            else:
+                continue
+
+    # if args.metadata_path is not None:
+    #     write_metadata(args.metadata_path, args.base_path, metadata)
+    toc = time.time()
+    tm = toc - tic
+    fps = vid.length / tm
     vid.end()
-    print(f'{window_name} Time: {toc:02.1f}s Speed: {fps:3.1f}fps (with visulization!)')
-    if confirm('Would you like to export the video? [Y/n] ', default=True):
-        if os.path.exists(args.target_path + args.base_path.split("/")[-1]):
-            if not confirm("WARNING: File already exists. Are you sure you want to overwrite the video? "):
-                quit()
-        print("Exporting video in the background!")
-        subprocess.Popen(['python', '../../tools/video_writer.py', '--base_path', args.base_path, '--target_path', args.target_path, "--video_name", args.base_path.split("/")[-1]])
+    print(f'{window_name} Time: {tm:02.1f}s Speed: {fps:3.1f}fps (with visualization!)')
+    # if confirm('Would you like to export the video? [Y/n] ', default=True):
+    #     if os.path.exists(args.target_path + args.base_path.split("/")[-1]):
+    #         if not confirm("WARNING: File already exists. Are you sure you want to overwrite the video? "):
+    #             quit()
+    #     print("Exporting video in the background!")
+    #     subprocess.Popen(['python', '../../tools/video_writer.py', '--base_path', args.base_path, '--target_path', args.target_path, "--video_name", args.base_path.split("/")[-1]])
