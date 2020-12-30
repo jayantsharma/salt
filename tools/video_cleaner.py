@@ -23,10 +23,8 @@ parser.add_argument('--resume', default='', type=str, required=True,
 parser.add_argument('--config', dest='config', default='config_davis.json',
                     help='hyper-parameter of SiamMask in json format')
 parser.add_argument('--base_path', required=True, help='base video path')
-parser.add_argument('--writers', default=16, help='number of image writers')
-parser.add_argument('--metadata_path', help='where to store (or append) the metadata')
-parser.add_argument('--cpu', action='store_true', help='cpu mode')
 parser.add_argument('--visualize_only', action='store_true', help='visualize masks')
+parser.add_argument('--brighter_initialize', action='store_true', help='initialize tracks from brighter')
 args = parser.parse_args()
 
 cfg = load_config(args)
@@ -136,18 +134,21 @@ def confirm(prompt, default=None):
                 continue
 
 class Track():
-    def __init__(self, offset, init_rect):
+    def __init__(self, offset, init_rect, im=None, init_mask=None):
         self.offset = offset
 
-        self.siammask = get_siammask()
-        x, y, w, h = init_rect
-        target_pos = np.array([x + w / 2, y + h / 2])
-        target_sz = np.array([w, h])
-        state = siamese_init(im, target_pos, target_sz, self.siammask, cfg['hp'], device=device)  # init tracker
-        self.state = state
+        if im is not None:
+            self.siammask = get_siammask()
+            x, y, w, h = init_rect
+            target_pos = np.array([x + w / 2, y + h / 2])
+            target_sz = np.array([w, h])
+            state = siamese_init(im, target_pos, target_sz, self.siammask, cfg['hp'], device=device)  # init tracker
+            self.state = state
 
-        init_state = siamese_track(self.state, im, mask_enable=True, refine_enable=True, device=device)  # track
-        rect, mask = self.extract_rect_and_mask(init_state)
+            init_state = siamese_track(self.state, im, mask_enable=True, refine_enable=True, device=device)  # track
+            rect, mask = self.extract_rect_and_mask(init_state)
+        else:
+            rect, mask = init_rect, init_mask
         self.frames_tracked = [(rect, mask)]
 
     def track_frame(self, im, f):
@@ -185,33 +186,55 @@ class Track():
             del self.siammask
             del self.state
 
+def init_tracks(dirname, partidx, im_size):
+    cur_tracks = set()
+    per_frame_tracks = [ set() for _ in range(vid.length) ]
+
+    if args.brighter_initialize:
+        import xml.etree.ElementTree as ET
+        xmlfname = "{}/{}_brighter.xml".format(dirname, partidx)
+        tree = ET.parse(xmlfname)
+        root = tree.getroot()
+        for track in root.findall("track"):
+            track_obj = None
+            for bbox in track.findall("box"):
+                if not bool(int(bbox.get("outside"))):
+                    frm = int(bbox.get("frame"))
+                    xtl = round(float(bbox.get("xtl")))
+                    ytl = round(float(bbox.get("ytl")))
+                    xbr = round(float(bbox.get("xbr")))
+                    ybr = round(float(bbox.get("ybr")))
+                    rect = [(xtl,ytl),(xbr,ytl),(xbr,ybr),(xtl,ybr)]
+                    mask = np.zeros(im_size)
+                    mask[ytl:ybr+1,xtl:xbr+1] = True
+
+                    if track_obj is None:
+                        track_obj = Track(frm, init_rect=rect, init_mask=mask)
+                        print("--- Track initialized from frm {} ---".format(frm))
+                    else:
+                        track_obj.frames_tracked.append((rect,mask))
+                    per_frame_tracks[frm].add(track_obj)
+
+    return cur_tracks, per_frame_tracks
+
 if __name__ == '__main__':
-    target_path = os.path.join(os.path.dirname(args.base_path), os.path.basename(args.base_path).partition(".")[0])
+    dirname = os.path.dirname(args.base_path)
+    partidx = os.path.basename(args.base_path).partition(".")[0]
+    target_path = os.path.join(dirname, partidx)
     if not args.visualize_only:
         if os.path.exists(target_path):
             import shutil
             shutil.rmtree(target_path)
         os.makedirs(target_path)
 
-    # write_executor = Executor(max_workers=args.writers)
     window_name = "Anonymal"
 
-    # base_siammask = get_siammask()
-
-    target_value = 0
     vid = VideoPlayer()
     ret, im = vid.get_cur_frame()
     im_size = im[..., 0].shape
 
-    # key = cv2.waitKey(0)
-    # vid.mask_enabled = key != 99
-    # vid.get_new_example = vid.mask_enabled
     mode = "play"
-    states = []
-    metadata = {}
-    cur_identity = get_max_identity(args.metadata_path)
-    cur_tracks = set()
-    per_frame_tracks = [ set() for _ in range(vid.length) ]
+    cur_tracks, per_frame_tracks = init_tracks(dirname, partidx, im_size)
 
     def display(im, mode):
         if mode == "play":
@@ -302,7 +325,7 @@ if __name__ == '__main__':
                     display(im, "roi")
                     init_rect = cv2.selectROI(window_name, im, False, False)
                     if init_rect:
-                        track = Track(vid.f, init_rect)
+                        track = Track(vid.f, init_rect, im)
                         cur_tracks.add(track)
                         per_frame_tracks[vid.f].add(track)
 
