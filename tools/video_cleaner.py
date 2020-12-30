@@ -18,7 +18,7 @@ from distutils.util import strtobool
 
 parser = argparse.ArgumentParser(description='PyTorch Tracking Demo')
 
-parser.add_argument('--resume', default='', type=str, required=True,
+parser.add_argument('--resume', default="SiamMask_DAVIS.pth", type=str,
                     metavar='PATH',help='path to latest checkpoint (default: none)')
 parser.add_argument('--config', dest='config', default='config_davis.json',
                     help='hyper-parameter of SiamMask in json format')
