@@ -7,6 +7,7 @@
 # --------------------------------------------------------
 import glob
 import os
+from tqdm import tqdm
 from copy import copy
 import json
 import subprocess
@@ -21,11 +22,11 @@ parser.add_argument('--resume', default='', type=str, required=True,
                     metavar='PATH',help='path to latest checkpoint (default: none)')
 parser.add_argument('--config', dest='config', default='config_davis.json',
                     help='hyper-parameter of SiamMask in json format')
-parser.add_argument('--base_path', default='../../data/tennis', help='base video path')
-parser.add_argument('--target_path', default='../../results/', help='target path to store blurred images')
+parser.add_argument('--base_path', required=True, help='base video path')
 parser.add_argument('--writers', default=16, help='number of image writers')
 parser.add_argument('--metadata_path', help='where to store (or append) the metadata')
 parser.add_argument('--cpu', action='store_true', help='cpu mode')
+parser.add_argument('--visualize_only', action='store_true', help='visualize masks')
 args = parser.parse_args()
 
 cfg = load_config(args)
@@ -145,18 +146,22 @@ class Track():
         state = siamese_init(im, target_pos, target_sz, self.siammask, cfg['hp'], device=device)  # init tracker
         self.state = state
 
-        tracked_init = siamese_track(self.state, im, mask_enable=True, refine_enable=True, device=device)  # track
-        rect = tracked_init['ploygon'] # top-left & bottom-right, xy format
-        # rect = np.array([(x,y), (x+w,y), (x+w,y+h), (x,y+h)])
-        self.frames_tracked = [rect]
+        init_state = siamese_track(self.state, im, mask_enable=True, refine_enable=True, device=device)  # track
+        rect, mask = self.extract_rect_and_mask(init_state)
+        self.frames_tracked = [(rect, mask)]
 
     def track_frame(self, im, f):
         if self.is_next_frame(f):
             tracked_state = siamese_track(self.state, im, mask_enable=True, refine_enable=True, device=device)  # track
-            rect = tracked_state['ploygon'] # top-left & bottom-right, xy format
-            self.frames_tracked.append(rect)
+            rect, mask = self.extract_rect_and_mask(tracked_state)
+            self.frames_tracked.append((rect,mask))
             self.state = tracked_state
             return rect
+
+    def extract_rect_and_mask(self, state):
+        rect = state['ploygon']
+        mask = state["mask"] > state["p"].seg_thr
+        return rect, mask
     
     def is_next_frame(self, f):
         return self.map_to_idx(f) == len(self.frames_tracked)
@@ -167,7 +172,7 @@ class Track():
     def map_to_f(self, idx):
         return self.offset + idx
 
-    def get_rect(self, f):
+    def get_label(self, f):
         return self.frames_tracked[self.map_to_idx(f)]
 
     def terminate(self, f, per_frame_tracks):
@@ -176,12 +181,17 @@ class Track():
             per_frame_tracks[frm].remove(self)
         self.frames_tracked = self.frames_tracked[:self.map_to_idx(f)]
         # Free up memory
-        del self.siammask
-        del self.state
+        if hasattr(self, "siammask"):
+            del self.siammask
+            del self.state
 
 if __name__ == '__main__':
-    if not os.path.exists(args.target_path):
-        os.mkdir(args.target_path)
+    target_path = os.path.join(os.path.dirname(args.base_path), os.path.basename(args.base_path).partition(".")[0])
+    if not args.visualize_only:
+        if os.path.exists(target_path):
+            import shutil
+            shutil.rmtree(target_path)
+        os.makedirs(target_path)
 
     # write_executor = Executor(max_workers=args.writers)
     window_name = "Anonymal"
@@ -191,6 +201,7 @@ if __name__ == '__main__':
     target_value = 0
     vid = VideoPlayer()
     ret, im = vid.get_cur_frame()
+    im_size = im[..., 0].shape
 
     # key = cv2.waitKey(0)
     # vid.mask_enabled = key != 99
@@ -212,11 +223,18 @@ if __name__ == '__main__':
         elif mode == "modify":
             text = "Modify, Frame {}, t: Terminate, d: Delete".format(vid.f)
         cv2.putText(im, text, (100,50), cv2.FONT_HERSHEY_DUPLEX, 1, (255,0,0))
+        all_mask = np.zeros(im_size)
         for track in per_frame_tracks[vid.f]:
-            rect = track.get_rect(vid.f)
+            rect, mask = track.get_label(vid.f)
             clr = (255,0,0) if track in cur_tracks else (0,0,255) 
-            # cv2.rectangle(im, tuple(rect[0]), tuple(rect[1]), clr, 2)
             cv2.polylines(im, [np.int0(rect).reshape((-1, 1, 2))], True, clr, 3)
+            all_mask = np.logical_or(all_mask, mask)
+        if args.visualize_only: # for viz of saved labels
+            fname = target_path + "/mask{:05d}.npy".format(vid.f)
+            if os.path.exists(fname):
+                with open(fname, "rb") as fp:
+                    all_mask = np.load(fp)
+        im[..., 2] = (all_mask > 0) * 255 + (all_mask == 0) * im[..., 2]
         cv2.imshow(window_name, im)
 
     tic = time.time()
@@ -264,8 +282,9 @@ if __name__ == '__main__':
                             text = "Track {}, Frame {}, d: Delete, c: Continue".format(i + 1, vid.f)
                             clr = (0,0,255)
                         cv2.putText(im, text, (100,50), cv2.FONT_HERSHEY_DUPLEX, 1, (255,0,0))
-                        rect = track.get_rect(vid.f)
+                        rect, mask = track.get_label(vid.f)
                         cv2.polylines(im, [np.int0(rect).reshape((-1, 1, 2))], True, clr, 3)
+                        im[..., 2] = (mask > 0) * 255 + (mask == 0) * im[..., 2]
                         cv2.imshow(window_name, im)
                         key = cv2.waitKey(0)
                         if track in cur_tracks:
@@ -302,6 +321,16 @@ if __name__ == '__main__':
     fps = vid.length / tm
     vid.end()
     print(f'{window_name} Time: {tm:02.1f}s Speed: {fps:3.1f}fps (with visualization!)')
+
+    for f, tracks in tqdm(enumerate(per_frame_tracks)):
+        if tracks:
+            all_mask = np.zeros(im_size)
+            for track in tracks:
+                _, mask = track.get_label(f)
+                all_mask = np.logical_or(all_mask, mask)
+            with open(target_path + "/mask{:05d}.npy".format(f), "wb") as fp:
+                np.save(fp, all_mask)
+
     # if confirm('Would you like to export the video? [Y/n] ', default=True):
     #     if os.path.exists(args.target_path + args.base_path.split("/")[-1]):
     #         if not confirm("WARNING: File already exists. Are you sure you want to overwrite the video? "):
