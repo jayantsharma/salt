@@ -324,7 +324,7 @@ if __name__ == '__main__':
                     ret, im = vid.refresh_cur_frame()
                     display(im, "roi")
                     init_rect = cv2.selectROI(window_name, im, False, False)
-                    if init_rect:
+                    if init_rect and init_rect[2] > 0 and init_rect[3] > 0:
                         track = Track(vid.f, init_rect, im)
                         cur_tracks.add(track)
                         per_frame_tracks[vid.f].add(track)
