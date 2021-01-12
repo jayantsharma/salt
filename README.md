@@ -1,4 +1,25 @@
-# Anonymal
+# CV Annotation Tool
+
+A lightweight utility for fast bounding box and segmentation mask annotations. It is fast because it is built on a visual tracking backbone to minimize manual input and is especially lightweight since it leverages the simple but powerful opencv graphical toolkit. 
+
+The tool was born out of frustration with [CVAT](https://github.com/openvinotoolkit/cvat) when working with egocentric videos (eg, from a GoPro). In these videos, the effects of camera and object motion necessitate frequent user input and drag down annotation times. Additionally, the server client model of CVAT is extremely slow to buffer videos. We leverage the excellent tracking of [SiamMask](http://www.robots.ox.ac.uk/~qwang/SiamMask) to work around these bottlenecks while trading-off for a sophisticated UI. Of course, this is only useful with a GPU machine and the setup is complicated.
+
+Features include:
+
+1. Playback/rewind/stepping through the video
+2. Multiple object tracking
+3. Terminate/delete tracks
+4. Pre-populate annotations 
+
+Demo:
+
+FOO
+
+# Installation
+BAR
+
+# Usage
+BAZ
 
 Anonymal provides the ability to efficiently manually anonymize videos quickly and easily. Simply scrub through a video in near-real-time and draw bounding boxes around objects you'd like to anonymize, controlled primarily with the keyboard. Existing software tools attempt to take this process entirely out of the hands of the user and often miss important detail and are tuned to specific anonymization targets, while a manual approach using video-editing software is highly time-consuming.
 
