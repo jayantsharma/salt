@@ -11,9 +11,13 @@ Features include:
 3. Terminate/delete tracks
 4. Pre-populate annotations 
 
-Demo:
+## Demo
+<div align="center">
+  <img src="demo.gif" />
+</div>
+<br>
 
-FOO
+Watch the [screencast](https://youtu.be/80nUGCKmWN8) on youtube.
 
 # Installation
 BAR
