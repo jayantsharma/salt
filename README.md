@@ -1,8 +1,10 @@
-# CV Annotation Tool
+# SALT - Simply Annotate by Leveraging Tracking
 
 A lightweight utility for fast bounding box and segmentation mask annotations. It is fast because it is built on a visual tracking backbone to minimize manual input and is especially lightweight since it leverages the simple but powerful opencv graphical toolkit. 
 
-The tool was born out of frustration with [CVAT](https://github.com/openvinotoolkit/cvat) when working with egocentric videos (eg, from a GoPro). In these videos, the effects of camera and object motion necessitate frequent user input and drag down annotation times. Additionally, the server client model of CVAT is extremely slow to buffer videos. We leverage the excellent tracking of [SiamMask](http://www.robots.ox.ac.uk/~qwang/SiamMask) to work around these bottlenecks while trading-off for a sophisticated UI. Of course, this is only useful with a GPU machine and the setup is complicated.
+SALT was born out of frustration with [CVAT](https://github.com/openvinotoolkit/cvat) when working with egocentric videos (eg, from a GoPro). In these videos, the effects of camera and object motion necessitate frequent user input and drag down annotation times. Additionally, the server client model of CVAT is extremely slow to buffer videos. We leverage the excellent tracking of [SiamMask](http://www.robots.ox.ac.uk/~qwang/SiamMask) to work around these bottlenecks while trading-off for a sophisticated UI. Of course, this is only useful with a GPU machine and the setup is complicated.
+
+The idea for the project came from another related project [Anonymal](https://github.com/ezelikman/anonymal).
 
 Features include:
 
@@ -11,7 +13,7 @@ Features include:
 3. Terminate/delete tracks
 4. Pre-populate annotations 
 
-## Demo
+# Demo
 <div align="center">
   <img src="demo.gif" />
 </div>
@@ -20,36 +22,38 @@ Features include:
 Watch the [screencast](https://youtu.be/80nUGCKmWN8) on youtube.
 
 # Installation
-BAR
+Follow the setup instructions from SiamMask's [repo](https://github.com/foolwood/SiamMask#environment-setup). Don't forget to change the clone url to this repo's url and env vars/paths as needed.
+
+Tested on Ubuntu 18.04, Python 3.7, Pytorch 1.5.0, and CUDA 11.1.
 
 # Usage
-BAZ
 
-Anonymal provides the ability to efficiently manually anonymize videos quickly and easily. Simply scrub through a video in near-real-time and draw bounding boxes around objects you'd like to anonymize, controlled primarily with the keyboard. Existing software tools attempt to take this process entirely out of the hands of the user and often miss important detail and are tuned to specific anonymization targets, while a manual approach using video-editing software is highly time-consuming.
+```shell
+cd <PROJECT_ROOT>/experiments/siammask_sharp
+export PYTHONPATH=$PWD:$PYTHONPATH
+python ../../tools/video_cleaner.py --base_path foo.mp4
+```
+SALT has four primary modes of usage: playback, review, create_bbox & modify. In each mode, the available commands are displayed as text near the top of the video. The descriptions below focus on the purpose behind each and switching between modes.
 
-This repo and method are developed by [Eric Zelikman](https://zelikman.me/) and [Xindi Wu](https://xindiwu.github.io/) closely based on that of the CVPR 2019 paper **Fast Online Object Tracking and Segmentation: A Unifying Approach** by 
-[Qiang Wang](http://www.robots.ox.ac.uk/~qwang/)\*, [Li Zhang](http://www.robots.ox.ac.uk/~lz)\*, [Luca Bertinetto](http://www.robots.ox.ac.uk/~luca)\*, [Weiming Hu](https://scholar.google.com/citations?user=Wl4tl4QAAAAJ&hl=en), [Philip H.S. Torr](https://scholar.google.it/citations?user=kPxa2w0AAAAJ&hl=en&oi=ao)
-**CVPR 2019** <br />
-**[[Paper](https://arxiv.org/abs/1812.05050)] [[Video](https://youtu.be/I_iOVrcpEBw)] [[Project Page](http://www.robots.ox.ac.uk/~qwang/SiamMask)]** <br />
+1. Playback - As the name suggests, this mode is for video playback. Playback is fast and beats the need for a media player. In addition, any objects annotated in the past and yet active are tracked as well, labeling frames as they are played. Standard play/pause and skip ahead options available using keyboard.
 
-Functionally, Anonymal aims to make video anonymization accessible and straightforward. To do this, it: 
-1. Provides a user interface for the video and blurring procedure, allowing the selection of zero to many objects at different times, as necessary.
-2. Blurs the tracked regions, efficiently and losslessly storing the data.
-3. Automatically generates a new blurred video alongside polygonal metadata about the blurred areas.
-4. Contains scripts for simple batch video processing to reduce friction.
+2. Review - When users pause the video in playback mode, they enter review mode which allows stepping through frames at a granular level, allowing accurate pin-pointing for object start/end times. From the review mode, three transitions are possible:
+  - playback - Start playing again.
+  - create_bbox - Annotate a new object and start tracking/labeling it in future video frames. Draw the bounding box and hit Space/Enter when ready.
+  - modify - Terminate an existing object track (eg: if the object has gone out of frame) or delete it altogether. A track terminated in the past (inactive track) is displayed with a red border and can only be deleted. If there are multiple tracks, the tool cycles through them displaying one at a time.
+  
+__Note__: For each new track, a deep learning model is initialized. Therefore, the speed and memory usage is proportional to number of _active_ tracks. Terminating a track deletes the model and frees up memory.
 
-<div align="center">
-  <img src="demo_cats.jpg" width="600px" />
-</div>
+At the end, mask annotations are saved in the parent directory of the video file in a folder with same name as the video minus extension.
 
 ### Bibtex
 If you find this code useful, please consider citing 
 ```
-@misc{anonymal2020,
-    title={Anonymal},
-    author={Zelikman, Eric and Wu, Xindi},
+@misc{salt2021,
+    title={SALT - Simply Annotate by Leveraging Tracking},
+    author={Sharma, Jayant},
     booktitle={GitHub},
-    year={2020}
+    year={2021}
 }
 ```
 
@@ -63,60 +67,6 @@ In addition, the implementation and method are based closely on the SiamMask pap
     year={2019}
 }
 ```
-
-
-## Contents
-1. [Environment Setup](#environment-setup)
-2. [Anonymal](#anonymal)
-
-## Environment setup (Based on the SiamMask repo)
-This code has been tested on Ubuntu 16.04, Python 3.6, Pytorch 0.4.1, and CUDA 11.1
-
-- Clone the repository 
-```
-git clone https://github.com/ezelikman/Anonymal.git && cd Anonymal
-export Anonymal=$PWD
-```
-- Setup python environment
-```
-conda create -n anonymal python=3.6
-source activate anonymal
-pip install -r requirements.txt
-bash make.sh
-```
-- Add the project to your PYTHONPATH
-```
-export PYTHONPATH=$PWD:$PYTHONPATH
-```
-
-## Anonymal
-- [Setup](#environment-setup) your environment
-- Download the SiamMask model
-```shell
-cd $Anonymal/experiments/siammask_sharp
-wget http://www.robots.ox.ac.uk/~qwang/SiamMask_VOT.pth
-wget http://www.robots.ox.ac.uk/~qwang/SiamMask_DAVIS.pth
-```
-- Run `video_cleaner.py` to clean the video. Hit `c` to play the video in real-time, `a` and `d` to go back or ahead 48 frames. To enter the anonymization mode, hit `space` at any point. Draw a bounding box and hit `space` or `return` (`enter`) to register the bounding box. When you are done selecting bounding boxes, hit `escape` and then `a`, `escape`, or `d` depending on whether you want to start anonymizing from a few frames before the current frame, the current frame, or a few frames after the current frame. When anonymization is running, you can hit `c` to clear the current selection and play the video normally or `space` to choose a new one. `video_cleaner.py` will save lossless images to the target directory in real-time - this allows you to easily go back and forth through the video without losing your changes (unless you choose to do so), and preserves all resolution. 
-
-```shell
-cd $Anonymal/experiments/siammask_sharp
-export PYTHONPATH=$PWD:$PYTHONPATH
-python ../../tools/video_cleaner.py --resume SiamMask_DAVIS.pth --config config_davis.json --base_path 'demo.mp4' --target_path 'demo/'
-```
-- (Tip: You can press `escape` repeatedly when in selection mode, without selecting targets, to step through frame by frame. In addition, to cancel selection in selection more, you can use `escape + s`)
-
-- Run `video_writer.py` to combine the images and the original video into a new video, if you chose not to do so when prompted at the end of the `video_cleaner` run.
-
-```shell
-cd $Anonymal/experiments/siammask_sharp
-export PYTHONPATH=$PWD:$PYTHONPATH
-python ../../tools/video_writer.py --base_path 'demo.mp4' --target_path 'demo/'
-```
-
-<div align="center">
-  <img src="cats_example.gif" width="500px" />
-</div>
 
 ## License
 Licensed under an MIT license.
