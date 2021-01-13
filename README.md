@@ -13,7 +13,7 @@ Features include:
 3. Terminate/delete tracks
 4. Pre-populate annotations 
 
-# Demo
+## Demo
 <div align="center">
   <img src="demo.gif" />
 </div>
@@ -21,12 +21,12 @@ Features include:
 
 Watch the [screencast](https://youtu.be/80nUGCKmWN8) on youtube.
 
-# Installation
+## Installation
 Follow the setup instructions from SiamMask's [repo](https://github.com/foolwood/SiamMask#environment-setup). Don't forget to change the clone url to this repo's url and env vars/paths as needed.
 
 Tested on Ubuntu 18.04, Python 3.7, Pytorch 1.5.0, and CUDA 11.1.
 
-# Usage
+## Usage
 
 ```shell
 cd <PROJECT_ROOT>/experiments/siammask_sharp
@@ -46,7 +46,7 @@ __Note__: For each new track, a deep learning model is initialized. Therefore, t
 
 At the end, mask annotations are saved in the parent directory of the video file in a folder with same name as the video minus extension.
 
-### Bibtex
+## Bibtex
 If you find this code useful, please consider citing 
 ```
 @misc{salt2021,
