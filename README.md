@@ -19,7 +19,7 @@ Features include:
 </div>
 <br>
 
-Watch the [screencast](https://youtu.be/80nUGCKmWN8) on youtube.
+Watch the [screencast](https://youtu.be/9Gp0ORBF66o) on youtube.
 
 ## Installation
 Follow the setup instructions from SiamMask's [repo](https://github.com/foolwood/SiamMask#environment-setup). Don't forget to change the clone url to this repo's url and env vars/paths as needed.
