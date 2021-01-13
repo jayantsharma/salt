@@ -38,9 +38,9 @@ SALT has four primary modes of usage: playback, review, create_bbox & modify. In
 1. Playback - As the name suggests, this mode is for video playback. Playback is fast and beats the need for a media player. In addition, any objects annotated in the past and yet active are tracked as well, labeling frames as they are played. Standard play/pause and skip ahead options available using keyboard.
 
 2. Review - When users pause the video in playback mode, they enter review mode which allows stepping through frames at a granular level, allowing accurate pin-pointing for object start/end times. From the review mode, three transitions are possible:
-  - playback - Start playing again.
-  - create_bbox - Annotate a new object and start tracking/labeling it in future video frames. Draw the bounding box and hit Space/Enter when ready.
-  - modify - Terminate an existing object track (eg: if the object has gone out of frame) or delete it altogether. A track terminated in the past (inactive track) is displayed with a red border and can only be deleted. If there are multiple tracks, the tool cycles through them displaying one at a time.
+    - playback - Start playing again.
+    - create_bbox - Annotate a new object and start tracking/labeling it in future video frames. Draw the bounding box and hit Space/Enter when ready.
+    - modify - Terminate an existing object track (eg: if the object has gone out of frame) or delete it altogether. A track terminated in the past (inactive track) is displayed with a red border and can only be deleted. If there are multiple tracks, the tool cycles through them displaying one at a time.
   
 __Note__: For each new track, a deep learning model is initialized. Therefore, the speed and memory usage is proportional to number of _active_ tracks. Terminating a track deletes the model and frees up memory.
 
