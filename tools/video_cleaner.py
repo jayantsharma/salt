@@ -94,7 +94,7 @@ class VideoPlayer():
 
     def set_frame(self, new_f):
         if self.manual_update:
-            f = min(max(new_f, 0), self.length)
+            f = min(max(new_f, 0), self.length - 1)
             self.cap.set(1, f)
             self.f = f - 1
     
@@ -240,7 +240,7 @@ if __name__ == '__main__':
         if mode == "play":
             text = "{}, Frame {}, c: -30, v: +30, Space: Pause".format(mode.upper(), vid.f)
         elif mode == "review":
-            text = "{}, Frame {}, d: -1, f: +1, c: -5, v: +5, m: Modify, n: New, Space: Play".format(mode.upper(), vid.f)
+            text = "{}, Frame {}, d: -1, f: +1, c: -5, v: +5, m: Modify, n: New, Space: Play, q: Quit".format(mode.upper(), vid.f)
         elif mode == "roi":
             text = "Draw bbox, Frame {}".format(vid.f)
         elif mode == "modify":
@@ -261,8 +261,13 @@ if __name__ == '__main__':
         cv2.imshow(window_name, im)
 
     tic = time.time()
-    while ret:
+    while True:
         if mode == "play":
+            if not ret:
+                mode = "review"
+                vid.f = min(vid.f, vid.length - 1)
+                ret, im = vid.refresh_cur_frame()
+                continue
             for track in cur_tracks:
                 rect = track.track_frame(im, vid.f)
                 if rect is not None:
@@ -304,7 +309,7 @@ if __name__ == '__main__':
                         else:
                             text = "Track {}, Frame {}, d: Delete, c: Continue".format(i + 1, vid.f)
                             clr = (0,0,255)
-                        cv2.putText(im, text, (100,50), cv2.FONT_HERSHEY_DUPLEX, 1, (255,0,0))
+                        cv2.putText(im, text, (100,50), cv2.FONT_HERSHEY_DUPLEX, 1, clr)
                         rect, mask = track.get_label(vid.f)
                         cv2.polylines(im, [np.int0(rect).reshape((-1, 1, 2))], True, clr, 3)
                         im[..., 2] = (mask > 0) * 255 + (mask == 0) * im[..., 2]
@@ -334,6 +339,16 @@ if __name__ == '__main__':
                 elif key == 32:
                     mode = "play"
                     ret, im = vid.refresh_cur_frame()
+                elif key == 113:
+                    ret, im = vid.refresh_cur_frame()
+                    text = "Are you sure? [yN]"
+                    cv2.putText(im, text, (100,50), cv2.FONT_HERSHEY_DUPLEX, 1, (255,0,0))
+                    cv2.imshow(window_name, im)
+                    key = cv2.waitKey(0)
+                    if key == 121:
+                        break
+                    else:
+                        ret, im = vid.refresh_cur_frame()
             else:
                 continue
 
