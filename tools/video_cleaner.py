@@ -162,7 +162,20 @@ class Track():
     def extract_rect_and_mask(self, state):
         rect = state['ploygon']
         mask = state["mask"] > state["p"].seg_thr
+        mask = self.compress_mask(rect, mask)
         return rect, mask
+
+    def compress_mask(self, rect, mask):
+        rect = np.round(rect).astype(np.int32)
+        ys, xs = rect[:,1], rect[:,0]
+        mask = mask[ys.min():ys.max(), xs.min():xs.max()].copy()    # slicing only creates a view, so the memory is not freed
+        return mask
+    
+    def assimmilate_mask(self, all_mask, mask, rect):
+        rect = np.round(rect).astype(np.int32)
+        ys, xs = rect[:,1], rect[:,0]
+        all_mask[ys.min():ys.max(), xs.min():xs.max()] = np.logical_or(all_mask[ys.min():ys.max(), xs.min():xs.max()], mask)
+        return all_mask
     
     def is_next_frame(self, f):
         return self.map_to_idx(f) == len(self.frames_tracked)
@@ -205,7 +218,7 @@ def init_tracks(dirname, partidx, im_size):
                     xbr = round(float(bbox.get("xbr")))
                     ybr = round(float(bbox.get("ybr")))
                     rect = [(xtl,ytl),(xbr,ytl),(xbr,ybr),(xtl,ybr)]
-                    mask = np.zeros(im_size)
+                    mask = np.zeros(im_size, dtype=np.bool)
                     mask[ytl:ybr+1,xtl:xbr+1] = True
 
                     if track_obj is None:
@@ -246,12 +259,12 @@ if __name__ == '__main__':
         elif mode == "modify":
             text = "Modify, Frame {}, t: Terminate, d: Delete".format(vid.f)
         cv2.putText(im, text, (100,50), cv2.FONT_HERSHEY_DUPLEX, 1, (255,0,0))
-        all_mask = np.zeros(im_size)
+        all_mask = np.zeros(im_size, dtype=np.bool)
         for track in per_frame_tracks[vid.f]:
             rect, mask = track.get_label(vid.f)
             clr = (255,0,0) if track in cur_tracks else (0,0,255) 
             cv2.polylines(im, [np.int0(rect).reshape((-1, 1, 2))], True, clr, 3)
-            all_mask = np.logical_or(all_mask, mask)
+            all_mask = track.assimmilate_mask(all_mask, mask, rect)
         if args.visualize_only: # for viz of saved labels
             fname = target_path + "/mask{:05d}.npy".format(vid.f)
             if os.path.exists(fname):
@@ -311,6 +324,7 @@ if __name__ == '__main__':
                             clr = (0,0,255)
                         cv2.putText(im, text, (100,50), cv2.FONT_HERSHEY_DUPLEX, 1, clr)
                         rect, mask = track.get_label(vid.f)
+                        mask = track.assimmilate_mask(np.zeros(im_size, dtype=np.bool), mask, rect)
                         cv2.polylines(im, [np.int0(rect).reshape((-1, 1, 2))], True, clr, 3)
                         im[..., 2] = (mask > 0) * 255 + (mask == 0) * im[..., 2]
                         cv2.imshow(window_name, im)
@@ -362,10 +376,10 @@ if __name__ == '__main__':
 
     for f, tracks in tqdm(enumerate(per_frame_tracks)):
         if tracks:
-            all_mask = np.zeros(im_size)
+            all_mask = np.zeros(im_size, dtype=np.bool)
             for track in tracks:
-                _, mask = track.get_label(f)
-                all_mask = np.logical_or(all_mask, mask)
+                rect, mask = track.get_label(f)
+                all_mask = track.assimmilate_mask(all_mask, mask, rect)
             with open(target_path + "/mask{:05d}.npy".format(f), "wb") as fp:
                 np.save(fp, all_mask)
 
