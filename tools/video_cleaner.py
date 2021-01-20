@@ -146,7 +146,7 @@ class Track():
             self.state = state
 
             init_state = siamese_track(self.state, im, mask_enable=True, refine_enable=True, device=device)  # track
-            rect, mask = self.extract_rect_and_mask(init_state)
+            rect, mask = self.extract_rect_and_mask(init_state, *im.shape[:2])
         else:
             rect, mask = init_rect, init_mask
         self.frames_tracked = [(rect, mask)]
@@ -154,13 +154,16 @@ class Track():
     def track_frame(self, im, f):
         if self.is_next_frame(f):
             tracked_state = siamese_track(self.state, im, mask_enable=True, refine_enable=True, device=device)  # track
-            rect, mask = self.extract_rect_and_mask(tracked_state)
+            rect, mask = self.extract_rect_and_mask(tracked_state, *im.shape[:2])
             self.frames_tracked.append((rect,mask))
             self.state = tracked_state
             return rect
 
-    def extract_rect_and_mask(self, state):
+    def extract_rect_and_mask(self, state, h, w):
         rect = state['ploygon']
+        rect[:,1] = np.clip(rect[:,1], 0, h-1)
+        rect[:,0] = np.clip(rect[:,0], 0, w-1)
+
         mask = state["mask"] > state["p"].seg_thr
         mask = self.compress_mask(rect, mask)
         return rect, mask
@@ -260,8 +263,15 @@ if __name__ == '__main__':
             text = "Modify, Frame {}, t: Terminate, d: Delete".format(vid.f)
         cv2.putText(im, text, (100,50), cv2.FONT_HERSHEY_DUPLEX, 1, (255,0,0))
         all_mask = np.zeros(im_size, dtype=np.bool)
+        invalid_mask_flag = False
         for track in per_frame_tracks[vid.f]:
             rect, mask = track.get_label(vid.f)
+            try:
+                assert len(mask.flatten()) > 0 and mask.sum() > 0
+            except:
+                invalid_mask_flag = True
+                cv2.putText(im, "INVALID MASK!!", (100,100), cv2.FONT_HERSHEY_DUPLEX, 1, (0,0,255))
+
             clr = (255,0,0) if track in cur_tracks else (0,0,255) 
             cv2.polylines(im, [np.int0(rect).reshape((-1, 1, 2))], True, clr, 3)
             all_mask = track.assimmilate_mask(all_mask, mask, rect)
@@ -272,6 +282,7 @@ if __name__ == '__main__':
                     all_mask = np.load(fp)
         im[..., 2] = (all_mask > 0) * 255 + (all_mask == 0) * im[..., 2]
         cv2.imshow(window_name, im)
+        return invalid_mask_flag
 
     tic = time.time()
     while True:
@@ -285,8 +296,11 @@ if __name__ == '__main__':
                 rect = track.track_frame(im, vid.f)
                 if rect is not None:
                     per_frame_tracks[vid.f].add(track)
-            display(im, mode)
-            key = cv2.waitKey(1)
+            to_review = display(im, mode)
+            if to_review:
+                key = cv2.waitKey(0)
+            else:
+                key = cv2.waitKey(1)
             if key > 0:
                 if key == 99: 
                     ret, im = vid.shift_and_read_frame(-30)
