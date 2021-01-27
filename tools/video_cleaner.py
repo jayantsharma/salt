@@ -136,6 +136,7 @@ def confirm(prompt, default=None):
 class Track():
     def __init__(self, offset, init_rect, im=None, init_mask=None):
         self.offset = offset
+        self.frames_tracked = []
 
         if im is not None:
             self.siammask = get_siammask()
@@ -145,34 +146,37 @@ class Track():
             state = siamese_init(im, target_pos, target_sz, self.siammask, cfg['hp'], device=device)  # init tracker
             self.state = state
 
-            init_state = siamese_track(self.state, im, mask_enable=True, refine_enable=True, device=device)  # track
-            rect, mask = self.extract_rect_and_mask(init_state, *im.shape[:2])
+            rect, mask = self.track_(im, update_state=False)
+            self.compress_and_append(rect, mask)
         else:
-            rect, mask = init_rect, init_mask
-        self.frames_tracked = [(rect, mask)]
+            self.compress_and_append(init_rect, init_mask)
+
+    def track_(self, im, update_state=True):
+        tracked_state = siamese_track(self.state, im, mask_enable=True, refine_enable=True, device=device)  # track
+        rect, mask = self.extract_rect_and_mask(tracked_state, *im.shape[:2])
+        if update_state:
+            self.state = tracked_state
+        return rect, mask
 
     def track_frame(self, im, f):
         if self.is_next_frame(f):
-            tracked_state = siamese_track(self.state, im, mask_enable=True, refine_enable=True, device=device)  # track
-            rect, mask = self.extract_rect_and_mask(tracked_state, *im.shape[:2])
-            self.frames_tracked.append((rect,mask))
-            self.state = tracked_state
+            rect, mask = self.track_(im)
+            self.compress_and_append(rect, mask)
             return rect
 
     def extract_rect_and_mask(self, state, h, w):
         rect = state['ploygon']
-        rect[:,1] = np.clip(rect[:,1], 0, h-1)
-        rect[:,0] = np.clip(rect[:,0], 0, w-1)
-
         mask = state["mask"] > state["p"].seg_thr
-        mask = self.compress_mask(rect, mask)
         return rect, mask
 
-    def compress_mask(self, rect, mask):
+    def compress_and_append(self, rect, mask):
+        h,w = mask.shape
+        rect[:,1] = np.clip(rect[:,1], 0, h-1)
+        rect[:,0] = np.clip(rect[:,0], 0, w-1)
         rect = np.round(rect).astype(np.int32)
         ys, xs = rect[:,1], rect[:,0]
         mask = mask[ys.min():ys.max(), xs.min():xs.max()].copy()    # slicing only creates a view, so the memory is not freed
-        return mask
+        self.frames_tracked.append((rect,mask))
     
     def assimmilate_mask(self, all_mask, mask, rect):
         rect = np.round(rect).astype(np.int32)
@@ -220,15 +224,14 @@ def init_tracks(dirname, partidx, im_size):
                     ytl = round(float(bbox.get("ytl")))
                     xbr = round(float(bbox.get("xbr")))
                     ybr = round(float(bbox.get("ybr")))
-                    rect = [(xtl,ytl),(xbr,ytl),(xbr,ybr),(xtl,ybr)]
-                    mask = np.zeros(im_size, dtype=np.bool)
-                    mask[ytl:ybr+1,xtl:xbr+1] = True
+                    rect = np.array([(xtl,ytl),(xbr,ytl),(xbr,ybr),(xtl,ybr)])
+                    mask = np.ones(im_size[:2], dtype=np.bool)
 
                     if track_obj is None:
                         track_obj = Track(frm, init_rect=rect, init_mask=mask)
                         print("--- Track initialized from frm {} ---".format(frm))
                     else:
-                        track_obj.frames_tracked.append((rect,mask))
+                        track_obj.compress_and_append(rect, mask)
                     per_frame_tracks[frm].add(track_obj)
 
     return cur_tracks, per_frame_tracks
